@@ -167,8 +167,8 @@ awx-demo-postgres-13-0                             1/1     Running            0 
 awx-demo-task-5bc94c64f4-xfmqt                     3/4     CrashLoopBackOff   11 (4m52s ago)   49m
 awx-demo-web-7b694ddd7f-hkjpj                      2/3     CrashLoopBackOff   11 (4m36s ago)   47m
 awx-operator-controller-manager-7f77fc6964-s9cnn   2/2     Running            0                54m
-``
-You can track the installation for AWX from pod,`
+```
+You can track the installation for AWX from pod,
 ```
 $ kubectl logs awx-operator-controller-manager-6c58d59d97-vvkvc -n ansible-awx -f
 ```
