@@ -2,6 +2,6 @@
 ## Voraussetzungen:
 * 4GB RAM
 * 2 CPU Cores
-* '''> 20 GB Festplatte'''
+* Mindestens 20 GB freier Speicherplatz
 * Internetverbindung
 * Minikube
