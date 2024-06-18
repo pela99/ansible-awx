@@ -182,12 +182,12 @@ $
 ```
 In case, you are trying to access outside of your ubuntu system then run following kubectl command,
 ```
-kubectl port-forward service/awx-demo-service -n ansible-awx --address 0.0.0.0 10445:80 &< /dev/null
+$ kubectl port-forward service/awx-demo-service -n ansible-awx --address 0.0.0.0 10445:80 &< /dev/null
 ```
 Open the web broswer, type following URL
 http://<your servers ip>:10445
 To retrieve admin user password, run the following kubectl command,
 ```
-kubectl get secret awx-demo-admin-password -o jsonpath="{.data.password}" -n ansible-awx | base64 --decode; echo
+$ kubectl get secret awx-demo-admin-password -o jsonpath="{.data.password}" -n ansible-awx | base64 --decode; echo
 ```
 Login with the user: admin and the passwordkey from above.
