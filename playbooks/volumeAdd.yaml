@@ -1,0 +1,139 @@
+---
+  -  hosts: localhost
+     vars_prompt:
+      - name: "username"
+        prompt: "Enter UserName"
+        private: no
+      - name: "password"
+        prompt: "Enter Password"
+        private: yes
+     
+     vars:
+        login: &login
+          hostname: "{{ host.ip }}"
+          username: "{{ username }}"
+          password: "{{ password }}"
+          https: true
+          validate_certs: false
+     vars_files:
+      - volumeAdd_variable.yaml
+     collections:
+      - netapp.ontap
+     tasks:
+
+      - name: Prompt remote cluster IP
+        pause:
+          prompt: Please enter the remote cluster IP for creating Snapmirror relationship
+        when: UserInputs.snapmirror is defined and (UserInputs.remoteClusterIP|default(None) == None)
+        register: remoteClusterHostIP
+
+      - set_fact:
+          remoteClusterIP: "{{ UserInputs.remoteClusterIP if (UserInputs.remoteClusterIP|default(None) != None) else remoteClusterHostIP.user_input }}"
+        when: UserInputs.snapmirror is defined
+
+      - set_fact: 
+          maxThroughput: "{{ UserInputs.nas_application_template.qos.policy.fixed.max_throughput_mbps + 'MB/s'  if((UserInputs.nas_application_template.qos.policy.fixed.max_throughput_mbps | default('', true) | trim != '') and UserInputs.nas_application_template.qos.policy.fixed.max_throughput_mbps != '0') else ''}}{{',' if ((UserInputs.nas_application_template.qos.policy.fixed.max_throughput_mbps | default('', true) | trim != '') and UserInputs.nas_application_template.qos.policy.fixed.max_throughput_mbps != '0') and ((UserInputs.nas_application_template.qos.policy.fixed.max_throughput_iops | default('', true) | trim != '') and UserInputs.nas_application_template.qos.policy.fixed.max_throughput_iops != '0') else ''}}{{UserInputs.nas_application_template.qos.policy.fixed.max_throughput_iops + 'iops'  if((UserInputs.nas_application_template.qos.policy.fixed.max_throughput_iops | default('', true) | trim != '') and UserInputs.nas_application_template.qos.policy.fixed.max_throughput_iops != '0') else '' }}"
+          minThroughput: "{{ UserInputs.nas_application_template.qos.policy.fixed.min_throughput_mbps + 'MB/s'  if((UserInputs.nas_application_template.qos.policy.fixed.min_throughput_mbps | default('', true) | trim != '') and UserInputs.nas_application_template.qos.policy.fixed.min_throughput_mbps != '0') else ''}}{{',' if ((UserInputs.nas_application_template.qos.policy.fixed.min_throughput_mbps | default('', true) | trim != '') and UserInputs.nas_application_template.qos.policy.fixed.min_throughput_mbps != '0') and ((UserInputs.nas_application_template.qos.policy.fixed.min_throughput_iops | default('', true) | trim != '') and UserInputs.nas_application_template.qos.policy.fixed.min_throughput_iops != '0') else ''}}{{UserInputs.nas_application_template.qos.policy.fixed.min_throughput_iops + 'iops'  if((UserInputs.nas_application_template.qos.policy.fixed.min_throughput_iops | default('', true) | trim != '') and UserInputs.nas_application_template.qos.policy.fixed.min_throughput_iops != '0') else '' }}"
+      - name: Create or modify qos policy
+        when: UserInputs.nas_application_template.qos is defined and UserInputs.nas_application_template.qos.policy is defined and UserInputs.nas_application_template.qos.policy.name is defined and UserInputs.nas_application_template.qos.policy.name != 'none' and UserInputs.nas_application_template.qos.policy.name != 'extreme' and  UserInputs.nas_application_template.qos.policy.name != 'extreme-fixed' and  UserInputs.nas_application_template.qos.policy.name != 'value' and  UserInputs.nas_application_template.qos.policy.name != 'value-fixed' and UserInputs.nas_application_template.qos.policy.name != 'performance' and  UserInputs.nas_application_template.qos.policy.name != 'performance-fixed'
+        na_ontap_qos_policy_group:
+         state: present
+         name: "{{ UserInputs.nas_application_template.qos.policy.name }}"
+         vserver: "{{ UserInputs.svm.name }}"
+         max_throughput: "{{ omit if( maxThroughput == '') else maxThroughput  }}"
+         min_throughput: "{{ omit if( minThroughput == '') else minThroughput}}"
+         is_shared: "{{ UserInputs.nas_application_template.qos.policy.fixed.capacity_shared | default(omit)}}"
+         <<: *login
+      - name:  create FlexVolume or FlexGroup
+        when: UserInputs.name is defined and UserInputs.nas_application_template.flexcache is not defined
+        na_ontap_volume:
+          state: present
+          name: "{{ UserInputs.name }}"
+          vserver: "{{ UserInputs.svm.name }}"
+          size:  "{{UserInputs.size}}"
+          size_unit: "{{  (UserInputs.size_unit | lower) if (UserInputs.size_unit is defined) else 'gb' }}"
+          auto_provision_as: "{{ UserInputs.auto_provision_as  | default(omit) }}"
+          snapshot_policy: "{{ UserInputs.nas_application_template.snapshot_policy  | default(omit) }}"
+          qos_policy_group: "{{ omit if( UserInputs.nas_application_template.qos.policy.name is not defined or  UserInputs.nas_application_template.qos.policy.name == 'extreme' or  UserInputs.nas_application_template.qos.policy.name == 'performance' or UserInputs.nas_application_template.qos.policy.name == 'value') else UserInputs.nas_application_template.qos.policy.name }}"
+          qos_adaptive_policy_group: "{{ omit if( UserInputs.nas_application_template.qos.policy.name is not defined or  (UserInputs.nas_application_template.qos.policy.name != 'extreme' and  UserInputs.nas_application_template.qos.policy.name != 'performance' and UserInputs.nas_application_template.qos.policy.name != 'value')) else UserInputs.nas_application_template.qos.policy.name }}"
+          export_policy: "{{ UserInputs.nas_application_template.export_policy.name  | default(omit) }}"
+          nas_application_template: 
+              use_nas_application: true
+              storage_service: "{{ UserInputs.nas_application_template.storage_service.name  | default(omit) }}"
+              tiering:
+                  control: "{{ UserInputs.nas_application_template.tiering.control  | default(omit) }}"
+                  policy: "{{ UserInputs.nas_application_template.tiering.policy  | default(omit) }}"
+                  object_stores: "{{ UserInputs.nas_application_template.tiering.object_stores[0] | default(omit) }}"
+              nfs_access: "{{ UserInputs.nas_application_template.nfs_access  | default(omit) }}"
+              cifs_access: "{{ UserInputs.nas_application_template.cifs_access  | default(omit) }}"
+          <<: *login
+      - name:  create FlexCache
+        when: UserInputs.name is defined and UserInputs.nas_application_template.flexcache is defined
+        na_ontap_volume:
+          state: present
+          name: "{{ UserInputs.name }}"
+          vserver: "{{ UserInputs.svm.name }}"
+          size:  "{{UserInputs.size}}"
+          size_unit: "{{  (UserInputs.size_unit | lower) if (UserInputs.size_unit is defined) else 'gb' }}"
+          auto_provision_as: "{{ UserInputs.auto_provision_as  | default(omit) }}"
+          snapshot_policy: "{{ UserInputs.nas_application_template.snapshot_policy  | default(omit) }}"
+          qos_policy_group: "{{ omit if( UserInputs.nas_application_template.qos.policy.name is not defined or  UserInputs.nas_application_template.qos.policy.name == 'extreme' or  UserInputs.nas_application_template.qos.policy.name == 'performance' or UserInputs.nas_application_template.qos.policy.name == 'value') else UserInputs.nas_application_template.qos.policy.name }}"
+          qos_adaptive_policy_group: "{{ omit if( UserInputs.nas_application_template.qos.policy.name is not defined or  (UserInputs.nas_application_template.qos.policy.name != 'extreme' and  UserInputs.nas_application_template.qos.policy.name != 'performance' and UserInputs.nas_application_template.qos.policy.name != 'value')) else UserInputs.nas_application_template.qos.policy.name }}"
+          export_policy: "{{ UserInputs.nas_application_template.export_policy.name  | default(omit) }}"
+          nas_application_template: 
+            use_nas_application: true
+            storage_service: "{{ UserInputs.nas_application_template.storage_service.name  | default(omit) }}"
+            tiering:
+                control: "{{ UserInputs.nas_application_template.tiering.control  | default(omit) }}"
+                policy: "{{ UserInputs.nas_application_template.tiering.policy  | default(omit) }}"
+                object_stores: "{{ UserInputs.nas_application_template.tiering.object_stores[0] | default(omit) }}"
+            nfs_access: "{{ UserInputs.nas_application_template.nfs_access  | default(omit) }}"
+            cifs_access: "{{ UserInputs.nas_application_template.cifs_access  | default(omit) }}"
+            flexcache: 
+                dr_cache: "{{ UserInputs.nas_application_template.flexcache.dr_cache  | default(omit) }}"
+                origin_svm_name: "{{ UserInputs.nas_application_template.flexcache.origin_svm_name  | default(omit) }}"
+                origin_component_name: "{{ UserInputs.nas_application_template.flexcache.origin_component_name | default(omit) }}"
+          <<: *login
+
+      - name:  modify FlexCache prepopulate folders
+        when: UserInputs.nas_application_template.flexcache is defined and UserInputs.nas_application_template.flexcache.prepopulate.dir_paths is defined
+        na_ontap_flexcache:
+            state: present
+            name: "{{ UserInputs.name }}"
+            vserver: "{{ UserInputs.svm.name }}"
+            prepopulate:  
+              dir_paths: "{{ UserInputs.nas_application_template.flexcache.prepopulate.dir_paths | default(omit) }}"
+              exclude_dir_paths: "{{ UserInputs.nas_application_template.flexcache.prepopulate.exclude_dir_paths | default(omit) }}"
+              recurse: "{{ UserInputs.nas_application_template.flexcache.prepopulate.recurse | default(omit) }}"
+            <<: *login
+
+      - name: Create SnapMirror relationship
+        when: UserInputs.snapmirror is defined
+        na_ontap_snapmirror:
+          state: present
+          policy: "{{ UserInputs.snapmirror.policy.name | default(omit) }}"
+          initialize: "{{ UserInputs.snapmirror.initialized }}"
+          source_endpoint:
+            cluster: "{{ UserInputs.snapmirror.source.cluster }}"
+            consistency_goup_volumes: "{{ UserInputs.snapmirror.source.consistency_group_volumes | default(omit)}}"
+            ipspace: "{{ UserInputs.snapmirror.source.ipspace | default(omit)}}"
+            path: "{{ UserInputs.snapmirror.source.path }}"
+          destination_endpoint:
+            cluster: "{{ UserInputs.snapmirror.destination.cluster.name }}"
+            consistency_goup_volumes: "{{ UserInputs.snapmirror.destination.consistency_group_volumes | default(omit) }}"
+            path: "{{ UserInputs.snapmirror.destination.path }}"
+          create_destination:
+            enabled: "{{ UserInputs.snapmirror.create_destination.enabled }}"
+            storage_service:
+              enabled:  "{{ UserInputs.snapmirror.create_destination.storage_service.enabled }}"
+              enforce_performance: "{{ UserInputs.snapmirror.create_destination.storage_service.enforce_performance }}"
+              name: "{{ UserInputs.snapmirror.create_destination.storage_service.name | default(omit)}}"
+            tiering:
+              supported: "{{ UserInputs.snapmirror.create_destination.tiering.supported | default(omit) }}"
+              policy: "{{ UserInputs.snapmirror.create_destination.tiering.policy | default(omit) }}"
+          source_hostname: "{{ host.ip }}"
+          hostname: "{{ remoteClusterIP }}"
+          username: "{{ username }}"
+          password: "{{ password }}"
+          https: true
+          validate_certs: false
